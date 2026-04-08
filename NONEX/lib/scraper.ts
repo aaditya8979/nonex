@@ -59,6 +59,14 @@ async function fetchAndSanitize(
     const contentType = response.headers.get("content-type") || "";
     const body = await response.text();
 
+    if (
+      body.includes("Just a moment...") ||
+      (body.includes("Cloudflare") && body.includes("verify you are")) ||
+      body.includes("Attention Required!")
+    ) {
+      return null;
+    }
+
     if (contentType.includes("application/json")) {
       // For JSON APIs, stringify relevant portions
       try {

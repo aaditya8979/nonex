@@ -6,10 +6,24 @@ export interface PricingTier {
   features: string[];
 }
 
+export interface MarketIncomeCapability {
+  estimated_mrr: string;
+  validation_summary: string;
+  growth_ceiling: string;
+}
+
+export interface SuccessBlueprint {
+  founder_archetype: string;
+  execution_theory: string;
+  immediate_roadmap: string[];
+}
+
 export interface AnalysisResult {
   target_users: string;
   monetization_strategy: string;
   pricing_tiers: PricingTier[];
+  market_income_capability?: MarketIncomeCapability;
+  success_blueprint?: SuccessBlueprint;
 }
 
 export interface AnalyzeRequest {

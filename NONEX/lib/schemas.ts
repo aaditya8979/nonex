@@ -15,6 +15,20 @@ export const AnalysisResultSchema = z.object({
     .array(PricingTierSchema)
     .min(1, "At least one pricing tier required")
     .max(5, "Maximum 5 pricing tiers"),
+  market_income_capability: z
+    .object({
+      estimated_mrr: z.string().min(1),
+      validation_summary: z.string().min(1),
+      growth_ceiling: z.string().min(1),
+    })
+    .optional(),
+  success_blueprint: z
+    .object({
+      founder_archetype: z.string().min(1),
+      execution_theory: z.string().min(1),
+      immediate_roadmap: z.array(z.string().min(1)).min(1),
+    })
+    .optional(),
 });
 
 // ─── Request Validation ───

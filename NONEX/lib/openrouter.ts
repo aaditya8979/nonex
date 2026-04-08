@@ -6,7 +6,16 @@ import { AnalysisResultSchema } from "./schemas";
 // Deterministic Architect-Reviewer pipeline via OpenRouter API.
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
-const MODEL = "anthropic/claude-3.5-sonnet";
+
+// Model cascade: fast models first, heavier models as fallback.
+// This ensures results even when premium models are slow or rate-limited.
+const MODEL_CASCADE = [
+  "google/gemini-2.0-flash-001",
+  "anthropic/claude-3-haiku",
+  "anthropic/claude-3.5-sonnet",
+];
+
+const REQUEST_TIMEOUT_MS = 55000; // 55 seconds per attempt
 
 /**
  * Construct the Architect-Reviewer system prompt.
@@ -32,11 +41,23 @@ STRICT OUTPUT RULES:
       "price": 0,
       "features": ["Feature 1 derived from project capabilities", "Feature 2 matching competitor limits"]
     }
-  ]
+  ],
+  "market_income_capability": {
+    "estimated_mrr": "A realistic monthly recurring revenue estimate for the first 6 months, e.g. '$800-$2,400/mo'. Ground this in the competitor pricing data.",
+    "validation_summary": "A 1-2 sentence summary of why this revenue estimate is achievable based on the scraped market data.",
+    "growth_ceiling": "The realistic upper bound of annual revenue if the product gains traction, e.g. '$120K ARR within 18 months'."
+  },
+  "success_blueprint": {
+    "founder_archetype": "A short label for the ideal founder profile, e.g. 'Technical Solo Founder' or 'Design-Dev Duo'.",
+    "execution_theory": "A 2-3 sentence action plan describing HOW to go from current state to first paying customer.",
+    "immediate_roadmap": ["Step 1: ...", "Step 2: ...", "Step 3: ..."]
+  }
 }
 
 - pricing_tiers MUST have 2-4 tiers.
+- immediate_roadmap MUST have 3-5 steps.
 - All prices must be realistic and grounded in the scraped competitor data. Do not invent prices that contradict market baselines.
+- The 'price' field MUST be a raw number (e.g. 0, 15, 29.99). Do NOT include strings, currency symbols, or text like "/mo".
 - Features must be derived from the project description's actual capabilities, not imagined features.
 - Do NOT wrap your response in \`\`\`json\`\`\` or any other markdown.`;
 }
@@ -63,8 +84,79 @@ Analyze this project and return the monetization strategy as strict JSON. No mar
 }
 
 /**
- * Call OpenRouter API and return validated analysis result.
- * Implements retry logic and Zod schema enforcement.
+ * Make a single LLM call to a specific model with timeout.
+ * Returns the validated result or throws on failure.
+ */
+async function callModel(
+  model: string,
+  apiKey: string,
+  systemPrompt: string,
+  userPrompt: string,
+): Promise<AnalysisResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(OPENROUTER_API_URL, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://project-to-income.vercel.app",
+        "X-Title": "Project-to-Income Engine",
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        temperature: 0.3,
+        max_tokens: 2000,
+        top_p: 0.9,
+      }),
+    });
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      throw new Error(
+        `OpenRouter API error (${response.status}) [${model}]: ${errorBody}`
+      );
+    }
+
+    const data = await response.json();
+    const rawContent = data.choices?.[0]?.message?.content;
+
+    if (!rawContent) {
+      throw new Error(`Empty response from model: ${model}`);
+    }
+
+    // Robustly extract JSON object ignoring any prefixes or markdown
+    let cleanedContent = rawContent;
+    const firstBrace = cleanedContent.indexOf("{");
+    const lastBrace = cleanedContent.lastIndexOf("}");
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace >= firstBrace) {
+      cleanedContent = cleanedContent.substring(firstBrace, lastBrace + 1);
+    } else {
+      throw new Error(`No JSON object found in response from: ${model}`);
+    }
+
+    // Parse and validate with Zod
+    const parsed = JSON.parse(cleanedContent);
+    const validated = AnalysisResultSchema.parse(parsed);
+
+    return validated;
+  } catch (error) {
+    clearTimeout(timeout);
+    throw error;
+  }
+}
+
+/**
+ * Call OpenRouter API with a model cascade and return validated analysis result.
+ * Tries fast models first, falls back to heavier models if needed.
  */
 export async function analyzeWithLLM(
   projectDescription: string,
@@ -80,70 +172,20 @@ export async function analyzeWithLLM(
   const systemPrompt = buildSystemPrompt();
   const userPrompt = buildUserPrompt(projectDescription, marketData);
 
-  // Attempt up to 2 tries (initial + 1 retry)
-  let lastError: Error | null = null;
+  const errors: string[] = [];
 
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (const model of MODEL_CASCADE) {
     try {
-      const response = await fetch(OPENROUTER_API_URL, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          "HTTP-Referer": "https://project-to-income.vercel.app",
-          "X-Title": "Project-to-Income Engine",
-        },
-        body: JSON.stringify({
-          model: MODEL,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt },
-          ],
-          temperature: 0.3, // Low temperature for deterministic output
-          max_tokens: 2000,
-          top_p: 0.9,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text();
-        throw new Error(
-          `OpenRouter API error (${response.status}): ${errorBody}`
-        );
-      }
-
-      const data = await response.json();
-      const rawContent = data.choices?.[0]?.message?.content;
-
-      if (!rawContent) {
-        throw new Error("Empty response from OpenRouter API");
-      }
-
-      // Clean potential markdown wrapper
-      let cleanedContent = rawContent.trim();
-      if (cleanedContent.startsWith("```")) {
-        cleanedContent = cleanedContent
-          .replace(/^```(?:json)?\s*\n?/, "")
-          .replace(/\n?```\s*$/, "");
-      }
-
-      // Parse and validate with Zod
-      const parsed = JSON.parse(cleanedContent);
-      const validated = AnalysisResultSchema.parse(parsed);
-
-      return validated;
+      const result = await callModel(model, apiKey, systemPrompt, userPrompt);
+      return result;
     } catch (error) {
-      lastError =
-        error instanceof Error ? error : new Error(String(error));
-
-      // If it's a parse/validation error, retry with a stricter prompt nudge
-      if (attempt === 0) {
-        continue;
-      }
+      const msg = error instanceof Error ? error.message : String(error);
+      errors.push(`[${model}] ${msg}`);
+      // Continue to next model in cascade
     }
   }
 
   throw new Error(
-    `LLM analysis failed after 2 attempts: ${lastError?.message}`
+    `LLM analysis failed across all models:\n${errors.join("\n")}`
   );
 }

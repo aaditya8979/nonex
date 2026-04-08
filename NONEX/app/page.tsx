@@ -20,6 +20,8 @@ import {
   Cpu,
   Globe,
   Target,
+  BarChart3,
+  Map,
 } from "lucide-react";
 import type { AppState, TerminalLog, AnalysisResult, StreamEvent } from "@/lib/types";
 
@@ -718,6 +720,111 @@ export default function HomePage() {
                   </div>
                 </motion.div>
               </div>
+
+              {/* ─── Row 2: Market Income + Success Blueprint ─── */}
+              {(result?.market_income_capability || result?.success_blueprint) && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                  {/* Card 4: Market Income Capability */}
+                  {result?.market_income_capability && (
+                    <motion.div custom={3} variants={cardVariants} className="glass-card p-6">
+                      <div
+                        className="glass-card-accent"
+                        style={{ background: "linear-gradient(90deg, rgba(16,185,129,0.6), transparent)" }}
+                      />
+                      <div className="flex items-center gap-3 mb-5">
+                        <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-[rgba(16,185,129,0.08)] border border-[rgba(16,185,129,0.12)]">
+                          <BarChart3 className="w-[18px] h-[18px] text-[var(--accent-success)]" />
+                        </div>
+                        <div>
+                          <h3 className="text-[13px] font-semibold text-[var(--text-primary)] tracking-tight">
+                            Market Income Capability
+                          </h3>
+                          <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">
+                            Revenue potential
+                          </p>
+                        </div>
+                      </div>
+                      {/* Estimated MRR — hero metric */}
+                      <div className="mb-4">
+                        <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest mb-1.5 font-medium">Est. MRR</p>
+                        <p className="text-[28px] font-bold font-mono tracking-tight" style={{ color: "rgb(34,211,238)" }}>
+                          {result.market_income_capability.estimated_mrr}
+                        </p>
+                      </div>
+                      {/* Validation Summary */}
+                      <p className="text-[13px] text-[var(--text-secondary)] leading-[1.75] mb-4">
+                        {result.market_income_capability.validation_summary}
+                      </p>
+                      {/* Growth Ceiling */}
+                      <div className="pt-3 border-t border-[var(--glass-border)]">
+                        <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest mb-1 font-medium">Growth Ceiling</p>
+                        <p className="text-[13.5px] font-mono" style={{ color: "var(--accent-tertiary)" }}>
+                          {result.market_income_capability.growth_ceiling}
+                        </p>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {/* Card 5: Success Blueprint */}
+                  {result?.success_blueprint && (
+                    <motion.div custom={4} variants={cardVariants} className="glass-card p-6">
+                      <div
+                        className="glass-card-accent"
+                        style={{ background: "linear-gradient(90deg, rgba(99,102,241,0.6), transparent)" }}
+                      />
+                      <div className="flex items-center gap-3 mb-5">
+                        <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-[var(--accent-primary-soft)] border border-[rgba(99,102,241,0.12)]">
+                          <Map className="w-[18px] h-[18px] text-[var(--accent-primary)]" />
+                        </div>
+                        <div>
+                          <h3 className="text-[13px] font-semibold text-[var(--text-primary)] tracking-tight">
+                            Success Blueprint
+                          </h3>
+                          <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">
+                            Execution plan
+                          </p>
+                        </div>
+                      </div>
+                      {/* Founder Archetype Badge */}
+                      <div className="mb-4">
+                        <span className="inline-flex items-center px-3 py-1.5 rounded-lg bg-[var(--accent-primary-soft)] border border-[rgba(99,102,241,0.15)] text-[12px] font-mono font-semibold text-[var(--accent-primary)] tracking-wide">
+                          {result.success_blueprint.founder_archetype}
+                        </span>
+                      </div>
+                      {/* Execution Theory */}
+                      <p className="text-[13px] text-[var(--text-secondary)] leading-[1.75] mb-5">
+                        {result.success_blueprint.execution_theory}
+                      </p>
+                      {/* Immediate Roadmap Timeline */}
+                      {result.success_blueprint.immediate_roadmap?.length > 0 && (
+                        <div className="pt-3 border-t border-[var(--glass-border)]">
+                          <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest mb-3 font-medium">Immediate Roadmap</p>
+                          <div className="space-y-2.5">
+                            {result.success_blueprint.immediate_roadmap.map((step, i) => (
+                              <div key={i} className="flex items-start gap-3">
+                                <div className="flex flex-col items-center mt-1">
+                                  <div
+                                    className="w-2 h-2 rounded-full shrink-0"
+                                    style={{
+                                      background: i === 0 ? "var(--accent-primary)" : i === 1 ? "var(--accent-secondary)" : "var(--accent-tertiary)",
+                                    }}
+                                  />
+                                  {i < (result.success_blueprint?.immediate_roadmap?.length ?? 0) - 1 && (
+                                    <div className="w-px h-4 bg-[var(--glass-border)] mt-0.5" />
+                                  )}
+                                </div>
+                                <span className="text-[12.5px] text-[var(--text-secondary)] font-mono leading-snug">
+                                  {step}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </motion.div>
+                  )}
+                </div>
+              )}
 
               {/* Expandable Logs */}
               <motion.div variants={itemVariants} className="mt-6">

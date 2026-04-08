@@ -8,7 +8,7 @@ import type { StreamEvent } from "@/lib/types";
 // Pipeline: Validate Input → Scrape Market Data → LLM Analysis → Stream Results
 
 export const runtime = "nodejs";
-export const maxDuration = 60; // Allow up to 60s for scraping + LLM
+export const maxDuration = 120; // Allow up to 120s for scraping + LLM cascade
 
 /**
  * Encode a StreamEvent as an SSE data line.
@@ -53,8 +53,14 @@ export async function POST(request: NextRequest) {
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
+        let isClosed = false;
         const send = (event: StreamEvent) => {
-          controller.enqueue(encoder.encode(encodeEvent(event)));
+          if (isClosed) return;
+          try {
+            controller.enqueue(encoder.encode(encodeEvent(event)));
+          } catch (e) {
+            isClosed = true;
+          }
         };
 
         try {
@@ -115,7 +121,13 @@ export async function POST(request: NextRequest) {
           send(log("system", `Error: ${message}`, "error"));
           send({ type: "error", data: { message } });
         } finally {
-          controller.close();
+          if (!isClosed) {
+            try {
+              controller.close();
+            } catch (e) {
+              // Ignore already closed stream errors
+            }
+          }
         }
       },
     });
